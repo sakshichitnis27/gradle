@@ -16,44 +16,100 @@
 
 package org.gradle.launcher.daemon.client;
 
-import com.google.common.base.Joiner;
 import org.gradle.api.GradleException;
-import org.gradle.api.internal.DocumentationRegistry;
-import org.gradle.internal.service.scopes.Scope;
-import org.gradle.internal.service.scopes.ServiceScope;
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
+import org.gradle.internal.UncheckedException;
+import org.gradle.internal.serialize.FlushableEncoder;
+import org.gradle.internal.serialize.kryo.KryoBackedEncoder;
+import org.gradle.internal.stream.EncodedStream;
 import org.gradle.launcher.daemon.bootstrap.DaemonStartupCommunication;
+import org.gradle.launcher.daemon.configuration.DaemonParameters;
 import org.gradle.launcher.daemon.diagnostics.DaemonStartupInfo;
-import org.gradle.launcher.daemon.logging.DaemonMessages;
+import org.gradle.launcher.daemon.registry.DaemonDir;
 
-import java.util.List;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Scanner;
 
-@ServiceScope(Scope.Global.class)
+/**
+ * Handles the bootstrap protocol between the client and the daemon. Performs an
+ * initial handshake with a new daemon, exchanging startup information and receiving
+ * just enough resulting data to open a proper messaging channel with the daemon.
+ */
 public class DaemonGreeter {
-    private final DocumentationRegistry documentationRegistry;
 
-    public DaemonGreeter(DocumentationRegistry documentationRegistry) {
-        this.documentationRegistry = documentationRegistry;
-    }
+    private final static Logger LOGGER = Logging.getLogger(DaemonGreeter.class);
 
-    public DaemonStartupInfo parseDaemonOutput(String output, List<String> startupArgs) {
-        DaemonStartupCommunication startupCommunication = new DaemonStartupCommunication();
-        if (!startupCommunication.containsGreeting(output)) {
-            throw new GradleException(prepareMessage(output, startupArgs));
+    /**
+     * Welcome the daemon into this world. Graciously greet it by serializing the given parameters
+     * and writing them to the given output stream.
+     */
+    public static void greetDaemon(
+        OutputStream os,
+        DaemonDir daemonDir,
+        DaemonParameters daemonParameters,
+        boolean singleUse,
+        String daemonUid,
+        Collection<String> daemonOpts
+    ) {
+        FlushableEncoder encoder = new KryoBackedEncoder(new EncodedStream.EncodedOutput(os));
+        try {
+            encoder.writeString(daemonParameters.getGradleUserHomeDir().getAbsolutePath());
+            encoder.writeString(daemonDir.getBaseDir().getAbsolutePath());
+            encoder.writeSmallInt(daemonParameters.getIdleTimeout());
+            encoder.writeSmallInt(daemonParameters.getPeriodicCheckInterval());
+            encoder.writeBoolean(singleUse);
+            encoder.writeSmallInt(daemonParameters.getNativeServicesMode().ordinal());
+            encoder.writeString(daemonUid);
+            encoder.writeSmallInt(daemonParameters.getPriority().ordinal());
+            encoder.writeSmallInt(daemonOpts.size());
+            for (String daemonOpt : daemonOpts) {
+                encoder.writeString(daemonOpt);
+            }
+            encoder.flush();
+        } catch (IOException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
         }
-        String[] lines = output.split("\n");
-        //Assuming that the diagnostics were printed out to the last line. It's not bullet-proof but seems to be doing fine.
-        String lastLine = lines[lines.length - 1];
-        return startupCommunication.readDiagnostics(lastLine);
     }
 
-    private String prepareMessage(String output, List<String> startupArgs) {
-        return DaemonMessages.UNABLE_TO_START_DAEMON +
-            "\nThis problem might be caused by incorrect configuration of the daemon." +
-            "\nFor example, an unrecognized jvm option is used." +
-            documentationRegistry.getDocumentationRecommendationFor("details on the daemon", "gradle_daemon") +
-            "\nProcess command line: " + Joiner.on(" ").join(startupArgs) +
-            "\nPlease read the following process output to find out more:" +
-            "\n-----------------------\n" +
-            output;
+    /**
+     * Bear witness the daemon's first words. Humbly acknowledge their presence by deserializing
+     * the contents of the given input stream into a {@link DaemonStartupInfo} object.
+     */
+    public static DaemonStartupInfo acknowledgeDaemon(InputStream is) {
+        // Wait for the process' stdout to indicate that the process has been started successfully
+        String greeting = null;
+        ArrayList<String> lines = new ArrayList<>();
+        try (Scanner scanner = new Scanner(is, StandardCharsets.UTF_8.name())) {
+            while (scanner.hasNext()) {
+                String line = scanner.nextLine();
+                LOGGER.debug("Daemon output: {}", line);
+                lines.add(line);
+                if (DaemonStartupCommunication.containsDebugMessage(line)) {
+                    LOGGER.lifecycle(line);
+                }
+                if (line.contains(DaemonStartupCommunication.daemonGreeting())) {
+                    greeting = line;
+                    break;
+                }
+            }
+        }
+
+        if (greeting == null) {
+            throw new GradleException(
+                "Could not parse daemon handshake response.\n" +
+                "Please read the following process output to find out more:\n" +
+                "-----------------------\n" +
+                String.join("\n", lines)
+            );
+        }
+
+        return DaemonStartupCommunication.readDiagnostics(greeting);
     }
+
 }

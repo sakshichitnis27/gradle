@@ -70,7 +70,7 @@ public class DaemonStartupCommunication {
     }
 
     @SuppressWarnings("DefaultCharset")
-    public DaemonStartupInfo readDiagnostics(String message) {
+    public static DaemonStartupInfo readDiagnostics(String message) {
         //Assuming the message has correct format. Not bullet proof, but seems to work ok for now.
         if (!message.startsWith(daemonGreeting())) {
             throw new IllegalArgumentException(String.format("Unexpected daemon startup message: %s", message));
@@ -90,21 +90,14 @@ public class DaemonStartupCommunication {
         }
     }
 
-    public boolean containsGreeting(String message) {
-        if (message == null) {
-            throw new IllegalArgumentException("Unable to detect the daemon greeting because the input message is null!");
-        }
-        return message.contains(daemonGreeting());
-    }
-
-    public boolean containsDebugMessage(String message) {
+    public static boolean containsDebugMessage(String message) {
         if (message == null) {
             return false;
         }
         return message.contains(debugMessage());
     }
 
-    private static String daemonGreeting() {
+    public static String daemonGreeting() {
         return DaemonMessages.ABOUT_TO_CLOSE_STREAMS;
     }
 
