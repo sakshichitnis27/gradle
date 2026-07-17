@@ -15,7 +15,9 @@
  */
 package org.gradle.launcher.daemon.client;
 
+import com.google.common.base.Joiner;
 import org.gradle.api.GradleException;
+import org.gradle.api.internal.DocumentationRegistry;
 import org.gradle.api.internal.classpath.DefaultModuleRegistry;
 import org.gradle.api.internal.classpath.ModuleRegistry;
 import org.gradle.api.internal.file.DefaultFileLookup;
@@ -24,7 +26,6 @@ import org.gradle.api.internal.provider.ProviderInternal;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
 import org.gradle.initialization.DefaultBuildCancellationToken;
-import org.gradle.internal.UncheckedException;
 import org.gradle.internal.classpath.ClassPath;
 import org.gradle.internal.concurrent.CompositeStoppable;
 import org.gradle.internal.concurrent.DefaultExecutorFactory;
@@ -39,9 +40,6 @@ import org.gradle.internal.jvm.inspection.JavaInstallationCapability;
 import org.gradle.internal.jvm.inspection.JvmVersionDetector;
 import org.gradle.internal.lazy.Lazy;
 import org.gradle.internal.os.OperatingSystem;
-import org.gradle.internal.serialize.FlushableEncoder;
-import org.gradle.internal.serialize.kryo.KryoBackedEncoder;
-import org.gradle.internal.stream.EncodedStream;
 import org.gradle.internal.time.Time;
 import org.gradle.internal.time.Timer;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
@@ -56,6 +54,7 @@ import org.gradle.launcher.daemon.configuration.DaemonParameters;
 import org.gradle.launcher.daemon.configuration.DaemonPriority;
 import org.gradle.launcher.daemon.context.DaemonRequestContext;
 import org.gradle.launcher.daemon.diagnostics.DaemonStartupInfo;
+import org.gradle.launcher.daemon.logging.DaemonMessages;
 import org.gradle.launcher.daemon.registry.DaemonDir;
 import org.gradle.launcher.daemon.toolchain.DaemonJvmCriteria;
 import org.gradle.process.internal.DefaultClientExecHandleBuilderFactory.RootClientExecHandleBuilderFactory;
@@ -67,8 +66,8 @@ import org.gradle.util.internal.GFileUtils;
 import org.jspecify.annotations.NonNull;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -82,16 +81,14 @@ public class DefaultDaemonStarter implements DaemonStarter {
     private final DaemonDir daemonDir;
     private final DaemonParameters daemonParameters;
     private final DaemonRequestContext daemonRequestContext;
-    private final DaemonGreeter daemonGreeter;
     private final JvmVersionDetector jvmVersionDetector;
     private final Lazy<JavaToolchainQueryService> javaToolchainQueryService;
     private final PropertyFactory propertyFactory;
 
-    public DefaultDaemonStarter(DaemonDir daemonDir, DaemonParameters daemonParameters, DaemonRequestContext daemonRequestContext, DaemonGreeter daemonGreeter, JvmVersionDetector jvmVersionDetector, Lazy<JavaToolchainQueryService> javaToolchainQueryService, PropertyFactory propertyFactory) {
+    public DefaultDaemonStarter(DaemonDir daemonDir, DaemonParameters daemonParameters, DaemonRequestContext daemonRequestContext, JvmVersionDetector jvmVersionDetector, Lazy<JavaToolchainQueryService> javaToolchainQueryService, PropertyFactory propertyFactory) {
         this.daemonDir = daemonDir;
         this.daemonParameters = daemonParameters;
         this.daemonRequestContext = daemonRequestContext;
-        this.daemonGreeter = daemonGreeter;
         this.jvmVersionDetector = jvmVersionDetector;
         this.javaToolchainQueryService = javaToolchainQueryService;
         this.propertyFactory = propertyFactory;
@@ -175,24 +172,16 @@ public class DefaultDaemonStarter implements DaemonStarter {
 
         // Serialize configuration to daemon via the process' stdin
         StreamByteBuffer buffer = new StreamByteBuffer();
-        FlushableEncoder encoder = new KryoBackedEncoder(new EncodedStream.EncodedOutput(buffer.getOutputStream()));
-        try {
-            encoder.writeString(daemonParameters.getGradleUserHomeDir().getAbsolutePath());
-            encoder.writeString(daemonDir.getBaseDir().getAbsolutePath());
-            encoder.writeSmallInt(daemonParameters.getIdleTimeout());
-            encoder.writeSmallInt(daemonParameters.getPeriodicCheckInterval());
-            encoder.writeBoolean(singleUse);
-            encoder.writeSmallInt(daemonParameters.getNativeServicesMode().ordinal());
-            encoder.writeString(daemonUid);
-            encoder.writeSmallInt(daemonParameters.getPriority().ordinal());
-            encoder.writeSmallInt(daemonOpts.size());
-            for (String daemonOpt : daemonOpts) {
-                encoder.writeString(daemonOpt);
-            }
-            encoder.flush();
-        } catch (IOException e) {
-            throw UncheckedException.throwAsUncheckedException(e);
-        }
+        OutputStream outputStream = buffer.getOutputStream();
+        DaemonGreeter.greetDaemon(
+            outputStream,
+            daemonDir,
+            daemonParameters,
+            singleUse,
+            daemonUid,
+            daemonOpts
+        );
+
         InputStream stdInput = buffer.getInputStream();
 
         return startProcess(
@@ -228,7 +217,7 @@ public class DefaultDaemonStarter implements DaemonStarter {
         }
     }
 
-    private DaemonStartupInfo startProcess(List<String> args, File workingDir, InputStream stdInput) {
+    private static DaemonStartupInfo startProcess(List<String> args, File workingDir, InputStream stdInput) {
         LOGGER.debug("Starting daemon process: workingDir = {}, daemonArgs: {}", workingDir, args);
         Timer clock = Time.startTimer();
         try {
@@ -253,7 +242,16 @@ public class DefaultDaemonStarter implements DaemonStarter {
                 CompositeStoppable.stoppable(execActionFactory).stop();
             }
 
-            return daemonGreeter.parseDaemonOutput(outputConsumer.getProcessOutput(), args);
+            return outputConsumer.getResponse().mapFailure(failure ->
+                new GradleException(
+                    DaemonMessages.UNABLE_TO_START_DAEMON + "\n" +
+                    "This problem might be caused by incorrect configuration of the daemon.\n" +
+                    "For example, an unrecognized jvm option is used.\n" +
+                    new DocumentationRegistry().getDocumentationRecommendationFor("details on the daemon", "gradle_daemon") + "\n" +
+                    "Process command line: " + Joiner.on(" ").join(args),
+                    failure
+                )
+            ).get();
         } catch (GradleException e) {
             throw e;
         } catch (Exception e) {

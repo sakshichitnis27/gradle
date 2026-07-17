@@ -17,17 +17,14 @@
 package org.gradle.launcher.daemon.bootstrap
 
 import org.gradle.api.GradleException
-import org.gradle.api.internal.DocumentationRegistry
 import org.gradle.launcher.daemon.client.DaemonGreeter
 import org.gradle.launcher.daemon.logging.DaemonMessages
 import org.gradle.internal.remote.internal.inet.MultiChoiceAddress
-import org.gradle.process.ExecResult
 import spock.lang.Specification
 
-class DaemonGreeterTest extends Specification {
+import java.nio.charset.StandardCharsets
 
-    def registry = Mock(DocumentationRegistry)
-    def args = ["foo", "bar"]
+class DaemonGreeterTest extends Specification {
 
     def "parses the process output"() {
         given:
@@ -40,10 +37,9 @@ another line of output...
 """)
 
         new DaemonStartupCommunication().printDaemonStarted(printStream, 12, "uid", address, new File("12.log"))
-        def output = new String(outputStream.toByteArray())
 
         when:
-        def daemonStartupInfo = new DaemonGreeter(registry).parseDaemonOutput(output, args)
+        def daemonStartupInfo = DaemonGreeter.acknowledgeDaemon(new ByteArrayInputStream(outputStream.toByteArray()))
 
         then:
         daemonStartupInfo.address == address
@@ -58,24 +54,22 @@ another line of output...
         def output = """hey joe!
 another line of output..."""
 
-        ExecResult result = Mock()
-
         when:
-        new DaemonGreeter(registry).parseDaemonOutput(output, args);
+        DaemonGreeter.acknowledgeDaemon(new ByteArrayInputStream(output.getBytes(StandardCharsets.UTF_8)))
 
         then:
         def ex = thrown(GradleException)
-        ex.message.contains(DaemonMessages.UNABLE_TO_START_DAEMON)
-        ex.message.concat("Process command line: [foo, bar]")
+        ex.message.contains("Could not parse daemon handshake response.")
         ex.message.contains("hey joe!")
     }
 
     def "shouts if daemon broke completely"() {
         when:
-        new DaemonGreeter(registry).parseDaemonOutput("", args)
+        DaemonGreeter.acknowledgeDaemon(new ByteArrayInputStream(new byte[0]))
 
         then:
         def ex = thrown(GradleException)
-        ex.message.contains(DaemonMessages.UNABLE_TO_START_DAEMON)
+        ex.message.contains("Could not parse daemon handshake response.")
     }
+
 }
