@@ -26,6 +26,7 @@ import org.gradle.api.internal.provider.ProviderInternal;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
 import org.gradle.initialization.DefaultBuildCancellationToken;
+import org.gradle.initialization.exception.InitializationException;
 import org.gradle.internal.classpath.ClassPath;
 import org.gradle.internal.concurrent.CompositeStoppable;
 import org.gradle.internal.concurrent.DefaultExecutorFactory;
@@ -51,11 +52,13 @@ import org.gradle.jvm.toolchain.internal.JavaToolchainQueryService;
 import org.gradle.launcher.daemon.DaemonExecHandleBuilder;
 import org.gradle.launcher.daemon.bootstrap.DaemonOutputConsumer;
 import org.gradle.launcher.daemon.configuration.DaemonParameters;
-import org.gradle.launcher.daemon.configuration.DaemonPriority;
 import org.gradle.launcher.daemon.context.DaemonRequestContext;
-import org.gradle.launcher.daemon.diagnostics.DaemonStartupInfo;
 import org.gradle.launcher.daemon.logging.DaemonMessages;
 import org.gradle.launcher.daemon.registry.DaemonDir;
+import org.gradle.launcher.daemon.startup.DaemonPriority;
+import org.gradle.launcher.daemon.startup.DaemonStartupCommunication;
+import org.gradle.launcher.daemon.startup.DaemonStartupInfo;
+import org.gradle.launcher.daemon.startup.DefaultDaemonServerConfiguration;
 import org.gradle.launcher.daemon.toolchain.DaemonJvmCriteria;
 import org.gradle.process.internal.DefaultClientExecHandleBuilderFactory.RootClientExecHandleBuilderFactory;
 import org.gradle.process.internal.ExecHandle;
@@ -173,13 +176,24 @@ public class DefaultDaemonStarter implements DaemonStarter {
         // Serialize configuration to daemon via the process' stdin
         StreamByteBuffer buffer = new StreamByteBuffer();
         OutputStream outputStream = buffer.getOutputStream();
-        DaemonGreeter.greetDaemon(
+
+        DaemonStartupCommunication.writeDaemonServerConfiguration(
             outputStream,
-            daemonDir,
-            daemonParameters,
-            singleUse,
-            daemonUid,
-            daemonOpts
+            new DefaultDaemonServerConfiguration(
+                daemonParameters.getGradleUserHomeDir(),
+                daemonUid,
+                daemonDir.getBaseDir(),
+                daemonParameters.getIdleTimeout(),
+                daemonParameters.getPeriodicCheckInterval(),
+                singleUse,
+                daemonParameters.getPriority(),
+                new ArrayList<>(daemonOpts),
+                // Using the available agent is correct for the forked daemon processes, because the forking
+                // code takes the desired agent status into account when configuring the daemon command line.
+                // The daemon that shouldn't use the agent won't have the agent applied.
+                true,
+                daemonParameters.getNativeServicesMode()
+            )
         );
 
         InputStream stdInput = buffer.getInputStream();
@@ -243,7 +257,7 @@ public class DefaultDaemonStarter implements DaemonStarter {
             }
 
             return outputConsumer.getResponse().mapFailure(failure ->
-                new GradleException(
+                new InitializationException(
                     DaemonMessages.UNABLE_TO_START_DAEMON + "\n" +
                     "This problem might be caused by incorrect configuration of the daemon.\n" +
                     "For example, an unrecognized jvm option is used.\n" +

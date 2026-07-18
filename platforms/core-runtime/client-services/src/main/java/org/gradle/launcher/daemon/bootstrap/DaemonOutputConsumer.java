@@ -17,8 +17,8 @@
 package org.gradle.launcher.daemon.bootstrap;
 
 import org.gradle.internal.Try;
-import org.gradle.launcher.daemon.client.DaemonGreeter;
-import org.gradle.launcher.daemon.diagnostics.DaemonStartupInfo;
+import org.gradle.launcher.daemon.startup.DaemonStartupCommunication;
+import org.gradle.launcher.daemon.startup.DaemonStartupInfo;
 import org.gradle.process.internal.streams.StreamsHandler;
 
 import java.io.InputStream;
@@ -40,7 +40,7 @@ public class DaemonOutputConsumer implements StreamsHandler {
         if (processStdOutput == null) {
             throw new IllegalStateException("Cannot start consuming daemon output because streams have not been connected first.");
         }
-        this.response = Try.ofFailable(() -> DaemonGreeter.acknowledgeDaemon(processStdOutput));
+        this.response = Try.ofFailable(() -> DaemonStartupCommunication.readStartupInfoFromDaemonOutput(processStdOutput));
     }
 
     public Try<DaemonStartupInfo> getResponse() {
