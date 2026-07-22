@@ -15,10 +15,11 @@
  */
 package org.gradle.launcher.daemon.client;
 
-import org.gradle.launcher.daemon.startup.DaemonStartupInfo;
-
 public interface DaemonStarter {
 
-    DaemonStartupInfo startDaemon(boolean singleRun);
+    /**
+     * Starts a new daemon, returning once the daemon has completed its startup handshake.
+     */
+    DaemonHandle startDaemon(boolean singleRun);
 
 }

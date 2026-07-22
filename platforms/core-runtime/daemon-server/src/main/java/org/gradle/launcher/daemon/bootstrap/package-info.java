@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package org.gradle.internal.logging.config;
+/**
+ * Implements the entry-point for forked and embedded daemons
+ */
+@NullMarked
+package org.gradle.launcher.daemon.bootstrap;
 
-import org.gradle.api.logging.LogLevel;
-
-public interface LoggingConfigurer {
-    void configure(LogLevel logLevel);
-}
+import org.jspecify.annotations.NullMarked;
