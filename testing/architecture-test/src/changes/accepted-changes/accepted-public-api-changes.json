@@ -570,6 +570,14 @@
         },
         {
             "type": "org.gradle.plugins.ide.eclipse.model.EclipseJdt",
+            "member": "Constructor org.gradle.plugins.ide.eclipse.model.EclipseJdt(org.gradle.plugins.ide.api.PropertiesFileContentMerger)",
+            "acceptation": "Injected constructor replaced when the deprecated IDE file generation types were removed in Gradle 10; these model types are instantiated by the IDE plugins via ObjectFactory",
+            "changes": [
+                "Constructor has been removed"
+            ]
+        },
+        {
+            "type": "org.gradle.plugins.ide.eclipse.model.EclipseJdt",
             "member": "Method org.gradle.plugins.ide.eclipse.model.EclipseJdt.file(groovy.lang.Closure)",
             "acceptation": "Deprecated IDE file generation model properties removed in Gradle 10",
             "changes": [
@@ -630,6 +638,14 @@
             "acceptation": "WTP facet DSL and file merging hooks removed in Gradle 10; component configuration kept for Tooling API attributes",
             "changes": [
                 "Method has been removed"
+            ]
+        },
+        {
+            "type": "org.gradle.plugins.ide.eclipse.model.EclipseWtpComponent",
+            "member": "Constructor org.gradle.plugins.ide.eclipse.model.EclipseWtpComponent(org.gradle.api.Project,org.gradle.plugins.ide.api.XmlFileContentMerger)",
+            "acceptation": "Injected constructor replaced when the deprecated IDE file generation types were removed in Gradle 10; these model types are instantiated by the IDE plugins via ObjectFactory",
+            "changes": [
+                "Constructor has been removed"
             ]
         },
         {
@@ -1554,6 +1570,14 @@
         },
         {
             "type": "org.gradle.plugins.ide.idea.model.IdeaModule",
+            "member": "Constructor org.gradle.plugins.ide.idea.model.IdeaModule(org.gradle.api.Project,org.gradle.plugins.ide.idea.model.IdeaModuleIml)",
+            "acceptation": "Injected constructor replaced when the deprecated IDE file generation types were removed in Gradle 10; these model types are instantiated by the IDE plugins via ObjectFactory",
+            "changes": [
+                "Constructor has been removed"
+            ]
+        },
+        {
+            "type": "org.gradle.plugins.ide.idea.model.IdeaModule",
             "member": "Method org.gradle.plugins.ide.idea.model.IdeaModule.getIml()",
             "acceptation": "Deprecated IDE file generation model properties removed in Gradle 10",
             "changes": [
@@ -1646,6 +1670,14 @@
             "acceptation": "Deprecated IDE file generation model properties removed in Gradle 10",
             "changes": [
                 "Method has been removed"
+            ]
+        },
+        {
+            "type": "org.gradle.plugins.ide.idea.model.IdeaProject",
+            "member": "Constructor org.gradle.plugins.ide.idea.model.IdeaProject(org.gradle.api.Project,org.gradle.plugins.ide.api.XmlFileContentMerger)",
+            "acceptation": "Injected constructor replaced when the deprecated IDE file generation types were removed in Gradle 10; these model types are instantiated by the IDE plugins via ObjectFactory",
+            "changes": [
+                "Constructor has been removed"
             ]
         },
         {
