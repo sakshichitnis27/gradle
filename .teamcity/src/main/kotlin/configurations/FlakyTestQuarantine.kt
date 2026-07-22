@@ -16,6 +16,7 @@ import common.killProcessStep
 import jetbrains.buildServer.configs.kotlin.BuildStep
 import jetbrains.buildServer.configs.kotlin.Project
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
+import model.ALL_CROSS_VERSION_BUCKETS
 import model.CIBuildModel
 import model.Stage
 import model.StageName
@@ -53,9 +54,25 @@ class FlakyTestQuarantineProject(
         model.stages
             .filter { it.stageName <= StageName.READY_FOR_RELEASE }
             .flatMap { it.functionalTests }
-            .filter { it.os == os && !it.testType.crossVersionTests }
-            .forEach {
-                buildType(FlakyTestQuarantine(model, stage, it))
+            .filter { it.os == os }
+            .forEach { testCoverage ->
+                if (testCoverage.testType == TestType.ALL_VERSIONS_CROSS_VERSION) {
+                    // Running every Gradle version with the flaky ONLY strategy in a single build
+                    // times out and produces too many artifacts (gradle-private#4895). Split it by
+                    // Gradle version range, mirroring the regular AllCrossVersion bucketing.
+                    ALL_CROSS_VERSION_BUCKETS.forEachIndexed { index, versionRange ->
+                        buildType(
+                            FlakyTestQuarantine(
+                                model,
+                                stage,
+                                testCoverage,
+                                CrossVersionQuarantineBucket(versionRange[0], versionRange[1], index),
+                            ),
+                        )
+                    }
+                } else {
+                    buildType(FlakyTestQuarantine(model, stage, testCoverage))
+                }
             }
 
         model.stages
@@ -66,15 +83,26 @@ class FlakyTestQuarantineProject(
             .forEach(this::buildType)
     })
 
+data class CrossVersionQuarantineBucket(
+    val startInclusive: String,
+    val endExclusive: String,
+    val index: Int,
+) {
+    val idSuffix: String get() = "_bucket${index + 1}"
+    val nameSuffix: String get() = " ($startInclusive <= gradle <$endExclusive)"
+    val onlyTestGradleVersionParameter: String get() = "-PonlyTestGradleVersion=$startInclusive-$endExclusive"
+}
+
 class FlakyTestQuarantine(
     model: CIBuildModel,
     stage: Stage,
     testCoverage: TestCoverage,
+    crossVersionBucket: CrossVersionQuarantineBucket? = null,
 ) : OsAwareBaseGradleBuildType(os = testCoverage.os, stage = stage, init = {
         val os = os
         val arch = testCoverage.arch
-        id("${model.projectId}_FlakyQuarantine_${testCoverage.asId(model)}")
-        name = "Flaky Test Quarantine - ${testCoverage.asName()}"
+        id("${model.projectId}_FlakyQuarantine_${testCoverage.asId(model)}${crossVersionBucket?.idSuffix.orEmpty()}")
+        name = "Flaky Test Quarantine - ${testCoverage.asName()}${crossVersionBucket?.nameSuffix.orEmpty()}"
         description = "Run all flaky tests skipped multiple times"
 
         applyDefaultSettings(os = os, arch = arch, buildJvm = BuildToolBuildJvm, timeout = 60)
@@ -116,6 +144,7 @@ class FlakyTestQuarantine(
                         "-x",
                         ":distributions-integ-tests:configCacheTest",
                     ) +
+                    listOfNotNull(crossVersionBucket?.onlyTestGradleVersionParameter) +
                     listOf(extraParameters) +
                     functionalTestParameters(os, arch) +
                     listOf(buildScanTagParam(FUNCTIONAL_TEST_TAG), stage.getBuildScanCustomValueParam())
