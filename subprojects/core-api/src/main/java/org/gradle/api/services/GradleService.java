@@ -19,11 +19,8 @@ package org.gradle.api.services;
 import org.gradle.api.Incubating;
 
 /**
- * Marks a Gradle service that can be looked up from the build (Gradle) scope via
- * {@link org.gradle.api.invocation.Gradle#service(Class)}, including from init scripts and Gradle plugins.
- *
- * <p>This is a marker interface with no members. It exists so the service lookup can reject
- * unavailable types at compile time; it is not meant to be implemented by user code.</p>
+ * Marks a service that can be looked up via {@link org.gradle.api.invocation.Gradle#service(Class)}.
+ * It is not meant to be implemented by user code.
  *
  * @since 9.8.0
  */
